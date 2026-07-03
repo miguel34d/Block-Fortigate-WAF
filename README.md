@@ -1,5 +1,6 @@
 # Lab P11 — Topología FortiGate (Client-to-Site VPN)
-### Configuración 100% GUI — FortiOS 7.6.7
+
+## Configuración 100% GUI — FortiOS 7.6.7
 
 ---
 
@@ -39,14 +40,14 @@
 
 Clic en el nombre del puerto → **Edit Interface**.
 
-### Port1 (WAN)
+### 3.1 Port1 (WAN)
 - Role: WAN
 - Addressing mode: Manual
 - IP/Netmask: `200.13.67.2/255.255.255.252`
 - Administrative Access: `HTTPS`, `HTTP` (respaldo, ver nota abajo), `PING`
 - OK
 
-### Port2 (LAN Usuarios)
+### 3.2 Port2 (LAN Usuarios)
 - Role: LAN
 - Addressing mode: Manual
 - IP/Netmask: `10.13.67.1/255.255.255.128`
@@ -59,7 +60,7 @@ Clic en el nombre del puerto → **Edit Interface**.
   - Lease Time: default (7 días) está bien para lab
 - OK
 
-### Port3 (LAN Servidores)
+### 3.3 Port3 (LAN Servidores)
 - Role: LAN
 - Addressing mode: Manual
 - IP/Netmask: `10.13.67.129/255.255.255.240`
@@ -147,9 +148,7 @@ WhatsApp está bajo la categoría **Collaboration (293, ☁6)**. Bloquear toda l
 - Action: **Block**
 - OK — queda como Priority 1, Details `WhatsApp_VoIP.Call`, Type `Application`, Action `Block`
 - `Collaboration` en el bloque de categorías de arriba se deja en **Allow** (sin tocar)
-
 - OK (para guardar el perfil completo)
-
 - El resto de categorías: Monitor o Allow según necesites
 - OK (para guardar el perfil completo)
 
@@ -181,7 +180,6 @@ WhatsApp está bajo la categoría **Collaboration (293, ☁6)**. Bloquear toda l
 - Allow DNS requests when a rating error occurs: apagado
 - Log all DNS queries and responses: opcional, actívalo para evidencia
 - Strip Encrypted Client Hello: no tocar (viene activado por defecto)
-
 - **OK** (guarda el perfil completo)
 
 ### 7.3 IPS — detectar y bloquear escáneres de red
@@ -210,7 +208,6 @@ WhatsApp está bajo la categoría **Collaboration (293, ☁6)**. Bloquear toda l
 
 **Botnet C&C:**
 - Scan Outgoing Connections to Botnet Sites: `Block`
-
 - **OK** (guarda el sensor completo)
 
 > Nota: el buscador de firmas requiere texto para mostrar resultados (deja el campo vacío y sale "No results"). La base de firmas de esta licencia eval es de 2015, por lo que no existen nombres modernos como `Nmap.Scan` — se usa `FTP.Bounce.Port.Scan` + filtro por severidad como cobertura equivalente.
@@ -235,6 +232,7 @@ System → Feature Visibility → activa Web Application Firewall → Apply
 El resto (`Information Disclosure`, las versiones "(Extended)", `Known Exploits`) se dejan como están.
 
 - Constraint Exceptions: no tocar (default)
+- HTTP Method Policy: dejar apagado (Enforce HTTP Method Policy)
 - **OK**
 
 > El WAF requiere que la política asociada esté en modo de **inspección proxy-based**, no flow-based. Verifícalo en la política del VIP (paso 8, Policy 3) — si la política está en Flow-based, el campo WAF ni aparece para seleccionarlo.
@@ -245,26 +243,41 @@ El resto (`Information Disclosure`, las versiones "(Extended)", `Known Exploits`
 
 Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles de seguridad se aplican dentro de estas mismas 3 políticas, no como políticas adicionales.
 
-### Policy 1 — LANs-a-Internet (con bloqueos de apps/DNS/IPS)
-- Name: `LANs-a-Internet`
-- Incoming Interface: `port2`, `port3`
-- Outgoing Interface: `port1`
-- Source: `LAN_USUARIOS`, `LAN_SERVIDORES`
-- Destination: `all`
-- Schedule: always
-- Service: ALL
-- Action: ACCEPT
-- Inspection Mode: **Proxy-based** (necesario para varios de estos perfiles)
-- **Application Control: `APPSBLOCKEOS`**
-- **DNS Filter: `DNSFilter_ITLA`**
-- **IPS: `IPS_AntiScan`**
-- NAT: **Enable**
-- OK
+> **Nota sobre Incoming interface con múltiples valores:** en esta build, el campo Incoming interface de una policy normal solo admite **una** interfaz salvo que actives `System → Feature Visibility → Multiple Interface Policies`. Si no la activas (o no está disponible en licencia eval), usa **`any`** como Incoming interface y deja que el filtrado real lo hagan los objetos de **Source** (`LAN_USUARIOS`, `LAN_SERVIDORES`) — el efecto es equivalente para este lab.
 
-### Policy 2 — Usuarios-a-Servidores (solo HTTP, resto bloqueado)
+### 8.1 Policy 1 — LANs-a-Internet (con bloqueos de apps/DNS/IPS)
+
+**Create New Policy:**
+- Name: `LANs-a-Internet`
+- Schedule: `always`
+- Action: `ACCEPT`
+- Incoming interface: `any` (ver nota arriba si tu build no permite multi-selección)
+- Outgoing interface: tu interfaz WAN (alias tipo `ISP_INTERNET` / port1)
+- Source: `+` → `LAN_USUARIOS` y `LAN_SERVIDORES`
+- Destination: `+` → `all`
+- Service: `+` → `ALL`
+
+**Firewall/Network Options:**
+- Inspection mode: cambia de `Flow-based` a **`Proxy-based`** (activa las opciones de Security Profiles)
+- NAT: `Enable` (déjalo activado)
+- IP pool configuration: `Use Outgoing Interface Address`
+
+**Security Profiles** (activa el toggle de cada uno y selecciona el perfil):
+- DNS filter → `DNSFilter_ITLA`
+- Application control → `APPSBLOCKEOS`
+- IPS → `IPS_AntiScan`
+- AntiVirus, Web filter, Video filter, File filter, Web application firewall: apagados (no van en esta policy)
+- SSL inspection: dejar en `no-inspection` (el ⚠️ es solo informativo, ignóralo)
+
+**Logging Options:**
+- Log allowed traffic: `Security events`
+
+- **OK** (guarda la Policy 1 completa)
+
+### 8.2 Policy 2 — Usuarios-a-Servidores (solo HTTP, resto bloqueado)
 - Name: `Usuarios-a-Servidores-HTTP`
-- Incoming Interface: `port2`
-- Outgoing Interface: `port3`
+- Incoming Interface: interfaz de tu LAN Usuarios
+- Outgoing Interface: interfaz de tu LAN Servidores
 - Source: `LAN_USUARIOS`
 - Destination: `WEB_SERVER` (no uses `LAN_SERVIDORES` completo, solo el host web, para no abrir de más)
 - Schedule: always
@@ -274,10 +287,10 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 
 > Con esto, cualquier otro tráfico de LAN_USUARIOS hacia LAN_SERVIDORES que no sea HTTP hacia WEB_SERVER queda bloqueado automáticamente por el **implicit deny** del FortiGate (no hace falta una política explícita de bloqueo — el motor deniega todo lo que no matchea ninguna regla ACCEPT).
 
-### Policy 3 — Internet-a-Web (con WAF)
+### 8.3 Policy 3 — Internet-a-Web (con WAF)
 - Name: `Internet-a-Web`
-- Incoming Interface: `port1`
-- Outgoing Interface: `port3`
+- Incoming Interface: interfaz WAN (port1)
+- Outgoing Interface: interfaz LAN Servidores (port3)
 - Source: `all`
 - Destination: `VIP_WEB`
 - Schedule: always
@@ -315,3 +328,4 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 6. **WAF o Application Control no aparecen en el perfil de la política** → la política está en modo Flow-based. Fix: cambiar `Inspection Mode` a **Proxy-based** en la política antes de asignar el perfil.
 7. **No encuentro dónde agregar `itla.edu.do` en el DNS Filter** → el campo de dominios está oculto hasta activar el toggle `Domain Filter` dentro de la sección **Static Domain Filter** (no confundir con la tabla superior de `FortiGuard Category Based Filter`, que es solo para categorías generales de contenido). Fix: activa el toggle `Domain Filter`, luego usa el `+ Create New` que aparece debajo.
 8. **"No results" en el buscador de firmas IPS** (Security Profiles → Intrusion Prevention → Add Signatures) → el buscador requiere texto, dejarlo vacío no muestra nada. Además, la base de firmas de esta licencia eval está congelada desde 2015 (`diagnose autoupdate versions` → Attack Definitions 6.00741), así que nombres modernos como `Nmap.Scan` no existen. Fix: usar `FTP.Bounce.Port.Scan` (firma real de escaneo disponible en esta base) combinado con una entrada tipo `Filter` por `Severity: Medium/High/Critical` para cobertura general.
+9. **Incoming interface de una policy solo permite una interfaz** → en esta build no está disponible (o no se activó) `Multiple Interface Policies`. Fix: usar `any` como Incoming interface y dejar que `LAN_USUARIOS` + `LAN_SERVIDORES` en Source filtren el tráfico real.
