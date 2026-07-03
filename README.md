@@ -122,6 +122,14 @@ Clic en el nombre del puerto → **Edit Interface**.
 - Map to Port: `80`
 - OK
 
+> ⚠️ **Conflicto de puerto con la GUI de administración:** el VIP usa la misma IP (`200.13.67.2`) y puerto (`80`) que el acceso HTTP de management del FortiGate. Una vez creada la Policy 3 con este VIP, entrar a `http://200.13.67.2` ya no muestra la GUI del FortiGate — la Policy 3 hace DNAT y te lleva directo al servidor Web (`10.13.67.130`). Para seguir administrando el FortiGate por HTTP, cambia el puerto de management **antes o justo después** de crear el VIP:
+> ```
+> config system global
+>     set admin-port 8080
+> end
+> ```
+> Luego entra por `http://200.13.67.2:8080`. El puerto HTTPS de management (443) no tiene este conflicto porque el VIP solo mapea el 80.
+
 ---
 
 ## 7. Paso 5 — Perfiles de seguridad (crear ANTES de las políticas)
