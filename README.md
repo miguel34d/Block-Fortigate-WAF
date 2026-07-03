@@ -225,9 +225,16 @@ System → Feature Visibility → activa Web Application Firewall → Apply
 **Security Profiles → Web Application Firewall → Create New**
 
 - Name: `WAF_WebServer`
-- Signatures: deja activas las categorías por defecto (`SQL Injection`, `XSS`, `Generic Attacks`, `Trojans`)
+
+**En la tabla de Signatures, cambia Action a `Block` en estas filas** (vienen en Allow por defecto, click en el ícono ✓ Allow de cada una):
+- `Cross Site Scripting`
+- `SQL Injection`
+- `Generic Attacks`
+- `Trojans`
+
+El resto (`Information Disclosure`, las versiones "(Extended)", `Known Exploits`) se dejan como están.
+
 - Constraint Exceptions: no tocar (default)
-- Action global: `Block`
 - **OK**
 
 > El WAF requiere que la política asociada esté en modo de **inspección proxy-based**, no flow-based. Verifícalo en la política del VIP (paso 8, Policy 3) — si la política está en Flow-based, el campo WAF ni aparece para seleccionarlo.
