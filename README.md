@@ -157,57 +157,63 @@ WhatsApp está bajo la categoría **Collaboration (293, ☁6)**. Bloquear toda l
 
 **Security Profiles → DNS Filter → Create New**
 
-> **Actualizado según la GUI real de FortiOS 7.6.7 en esta licencia evaluación (FGVMEV_BMCNQAW92)**, la pantalla "New DNS Filter Profile" se ve así, de arriba a abajo:
+- Name: `DNSFilter_ITLA`
+- Redirect botnet C&C requests to Block Portal: apagado
+- Enforce 'Safe Search': apagado
+- FortiGuard Category Based Filter: no tocar, dejar en Monitor
 
-**Encabezado:**
-- **Name**: `DNSFilter_ITLA`
-- **Comments**: (opcional, límite 0/255)
-- **Redirect botnet C&C requests to Block Portal**: toggle → déjalo **apagado** para este lab (no es requisito del checklist; actívalo solo si quieres evidencia extra de botnets)
-- **Enforce 'Safe Search' on Google, Bing, YouTube**: toggle → **apagado**, no aplica al requisito
+**Bloquear el dominio:**
+- Sección **Static Domain Filter** → activa el toggle `Domain Filter`
+- **+ Create New**:
+  - Type: `Wildcard`
+  - Domain: `*.itla.edu.do`
+  - Action: `Block`
+  - OK
+- **+ Create New** otra vez:
+  - Type: `Simple`
+  - Domain: `itla.edu.do`
+  - Action: `Block`
+  - OK
+- `External IP Block Lists` y `DNS Translation`: apagados
 
-**Sección "FortiGuard Category Based Filter"** (toggle verde, viene activado por defecto):
-- Es la tabla grande con columnas `Name` y `Action`, con botones rápidos arriba: `✓ Allow`, `◎ Monitor`, `⊘ Redirect to Block Portal`
-- Todas las categorías (Adult/Mature Content, Alternative Beliefs, Gambling, Nudity and Risque, Pornography, Dating, etc.) vienen en **Monitor** por defecto
-- **No tocar esta tabla** para el requisito de este lab — bloquear itla.edu.do es un dominio específico, no una categoría de FortiGuard. Déjala en Monitor tal cual está.
+**Options** (abajo):
+- Redirect Portal IP: `Use FortiGuard Default`
+- Allow DNS requests when a rating error occurs: apagado
+- Log all DNS queries and responses: opcional, actívalo para evidencia
+- Strip Encrypted Client Hello: no tocar (viene activado por defecto)
 
-**Sección "Static Domain Filter"** (aquí es donde realmente se bloquea itla.edu.do):
-- Tres toggles, todos **apagados por defecto**:
-  - `Domain Filter`
-  - `External IP Block Lists`
-  - `DNS Translation` (tiene un ícono ⓘ de ayuda al lado)
-- **Activa solo el toggle `Domain Filter`** (clic para ponerlo en azul/verde). Al activarlo se despliega una tabla nueva debajo con columnas `Domain`, `Type`, `Action` y un botón `+ Create New` (o el ícono `+` en la esquina de la tabla)
-- Dentro de esa tabla recién desplegada:
-  - Clic **+ Create New**:
-    - Type: **Wildcard**
-    - Domain: `*.itla.edu.do`
-    - Action: **Block**
-    - OK
-  - Clic **+ Create New** otra vez:
-    - Type: **Simple**
-    - Domain: `itla.edu.do`
-    - Action: **Block**
-    - OK
-- Deja `External IP Block Lists` y `DNS Translation` **apagados** (no aplican a este requisito)
-
-**Sección "Options"** (parte inferior del formulario):
-- **Redirect Portal IP**: deja el botón `Use FortiGuard Default` seleccionado (no cambies a `Specify` a menos que quieras una IP de portal propia)
-- **Allow DNS requests when a rating error occurs**: toggle → déjalo **apagado** (default)
-- **Log all DNS queries and responses**: (Opcional) actívalo para tener evidencia de los bloqueos en el reporte de lab
-- **Strip Encrypted Client Hello service parameters**: este toggle viene **activado (verde) por defecto** en esta build — **no lo apagues**, es una protección estándar de FortiOS y no interfiere con el requisito
-
-- **OK** (botón verde inferior, guarda el perfil completo)
-
-> Nota: la tabla superior de "FortiGuard Category Based Filter" es para bloquear por *categorías generales* de contenido (redes sociales de contenido adulto, gambling, etc.). El bloqueo específico de `itla.edu.do` y sus subdominios se hace exclusivamente vía **Static Domain Filter**, que es la sección que antes describíamos de forma genérica y que ahora queda alineada 1:1 con los nombres reales de los campos en pantalla.
+- **OK** (guarda el perfil completo)
 
 ### 7.3 IPS — detectar y bloquear escáneres de red
 
 **Security Profiles → Intrusion Prevention → Create New**
 
 - Name: `IPS_AntiScan`
-- En la lista de firmas, filtra por categoría `Scan` o busca `nmap`, `port scan`, `network scan`
-- Marca las firmas relacionadas a reconocimiento/escaneo (ej. `TCP.Port.Scan`, `ICMP.Sweep`, `Nmap.Scan`) → Action: **Block**
-- Activa también **Botnet C&C** en Block (buena práctica adicional)
+- Comments: `Deteccion y bloqueo de escaneo de red`
+- Block malicious URLs: activado
+
+**Entrada 1 (firma específica):**
+- IPS Signatures and Filters → **+ Create New**
+- Type: `Signature`
+- Buscador: escribe `port.scan` → marca `FTP.Bounce.Port.Scan`
+- Action: `Block`
 - OK
+
+**Entrada 2 (filtro por severidad):**
+- **+ Create New** otra vez
+- Type: `Filter`
+- Action: `Block`
+- Packet logging: `Enable`
+- Status: `Enable`
+- Filter → `+` → Severity → marca `Medium`, `High`, `Critical`
+- OK
+
+**Botnet C&C:**
+- Scan Outgoing Connections to Botnet Sites: `Block`
+
+- **OK** (guarda el sensor completo)
+
+> Nota: el buscador de firmas requiere texto para mostrar resultados (deja el campo vacío y sale "No results"). La base de firmas de esta licencia eval es de 2015, por lo que no existen nombres modernos como `Nmap.Scan` — se usa `FTP.Bounce.Port.Scan` + filtro por severidad como cobertura equivalente.
 
 ### 7.4 Web Application Firewall — proteger el servidor Web
 
@@ -297,3 +303,4 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 5. **"Invalid IP Netmask"** al asignar IP a una interfaz → se puso la dirección de red (`10.13.67.0/25`) en vez de la IP de host (`10.13.67.1/25`). Fix: usar siempre la IP específica del equipo en interfaces; la subred completa solo va en objetos de dirección.
 6. **WAF o Application Control no aparecen en el perfil de la política** → la política está en modo Flow-based. Fix: cambiar `Inspection Mode` a **Proxy-based** en la política antes de asignar el perfil.
 7. **No encuentro dónde agregar `itla.edu.do` en el DNS Filter** → el campo de dominios está oculto hasta activar el toggle `Domain Filter` dentro de la sección **Static Domain Filter** (no confundir con la tabla superior de `FortiGuard Category Based Filter`, que es solo para categorías generales de contenido). Fix: activa el toggle `Domain Filter`, luego usa el `+ Create New` que aparece debajo.
+8. **"No results" en el buscador de firmas IPS** (Security Profiles → Intrusion Prevention → Add Signatures) → el buscador requiere texto, dejarlo vacío no muestra nada. Además, la base de firmas de esta licencia eval está congelada desde 2015 (`diagnose autoupdate versions` → Attack Definitions 6.00741), así que nombres modernos como `Nmap.Scan` no existen. Fix: usar `FTP.Bounce.Port.Scan` (firma real de escaneo disponible en esta base) combinado con una entrada tipo `Filter` por `Severity: Medium/High/Critical` para cobertura general.
