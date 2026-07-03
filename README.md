@@ -217,16 +217,20 @@ WhatsApp está bajo la categoría **Collaboration (293, ☁6)**. Bloquear toda l
 
 ### 7.4 Web Application Firewall — proteger el servidor Web
 
+**Si no aparece "Web Application Firewall" en el menú de Security Profiles, actívalo primero:**
+```
+System → Feature Visibility → activa Web Application Firewall → Apply
+```
+
 **Security Profiles → Web Application Firewall → Create New**
-(si no aparece la opción, primero actívala en **System → Feature Visibility → Security Profiles → Web Application Firewall**)
 
 - Name: `WAF_WebServer`
-- Signatures: activa las categorías por defecto (SQL Injection, XSS, Generic Attacks, Trojans)
-- Constraint Exceptions: dejar default para el lab
-- Action global: Block
-- OK
+- Signatures: deja activas las categorías por defecto (`SQL Injection`, `XSS`, `Generic Attacks`, `Trojans`)
+- Constraint Exceptions: no tocar (default)
+- Action global: `Block`
+- **OK**
 
-> El WAF requiere que la política asociada esté en modo de **inspección proxy-based**, no flow-based. Verifícalo en la política del VIP (paso 8, Policy 3).
+> El WAF requiere que la política asociada esté en modo de **inspección proxy-based**, no flow-based. Verifícalo en la política del VIP (paso 8, Policy 3) — si la política está en Flow-based, el campo WAF ni aparece para seleccionarlo.
 
 ---
 
