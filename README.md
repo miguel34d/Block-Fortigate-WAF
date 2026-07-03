@@ -245,15 +245,38 @@ El resto (`Information Disclosure`, las versiones "(Extended)", `Known Exploits`
 
 > El WAF requiere que la política asociada esté en modo de **inspección proxy-based**, no flow-based. Verifícalo en la política del VIP (paso 8, Policy 3) — si la política está en Flow-based, el campo WAF ni aparece para seleccionarlo.
 
+### 7.5 Web Filter — bloquear HTTP hacia Internet con página de bloqueo visible
+
+**Por qué existe este perfil:** el requisito "solo permitir HTTP de usuarios hacia servidores, bloquear el resto" se puede cumplir de dos formas: (a) quitando el servicio `HTTP` de la Policy 1 y dejando que el implicit deny corte la sesión (sin página de aviso, ver Errores comunes #11 en la versión anterior de este documento), o (b) permitiendo `HTTP` en la Policy 1 pero aplicando un Web Filter que bloquea todo con `*` — así el usuario ve la página de bloqueo con el logo de Fortinet en vez de un timeout silencioso. Esta sección documenta la opción (b), que es la que se implementó.
+
+**Por qué no rompe el HTTPS:** con SSL Inspection en `no-inspection`, el FortiGate nunca decodifica el tráfico HTTPS — pasa directo sin pasar por el motor de Web Filter. El tráfico HTTP sí es texto plano, así que el proxy (en modo Proxy-based) sí puede leerlo completo y aplicarle el Web Filter. Resultado: HTTP queda bloqueado con página de aviso, HTTPS sigue libre.
+
+**Security Profiles → Web Filter → Create New**
+
+- Name: `WebFilter_BlockHTTP`
+- Feature set: **Proxy-based** (debe coincidir con el modo de inspección de la Policy 1)
+- FortiGuard Category Based Filter: apagado
+- Static URL Filter → activa el toggle **URL Filter** (no "Content Filter", ese se deja apagado)
+  - **+ Create New**:
+    - URL: `*`
+    - Type: `Wildcard`
+    - Action: `Block`
+    - Status: `Enable`
+    - OK
+- Content Filter: apagado (no se usa)
+- Rating Options → "Block all websites" (default, no tocar)
+- Proxy Options: default, no tocar
+- **OK** (guarda el perfil completo)
+
 ---
 
 ## 8. Paso 6 — Políticas de firewall (Policy & Objects → Firewall Policy)
 
-Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles de seguridad se aplican dentro de estas mismas 3 políticas, no como políticas adicionales.
+Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles de seguridad se aplican dentro de estas mismas 3 políticas, no como políticas adicionales — incluyendo el Web Filter de la sección 7.5, que no cuenta como una 4ta política porque es solo un toggle dentro de la Policy 1 ya existente.
 
 > **Nota sobre Incoming interface con múltiples valores:** en esta build, el campo Incoming interface de una policy normal solo admite **una** interfaz salvo que actives `System → Feature Visibility → Multiple Interface Policies`. Si no la activas (o no está disponible en licencia eval), usa **`any`** como Incoming interface y deja que el filtrado real lo hagan los objetos de **Source** (`LAN_USUARIOS`, `LAN_SERVIDORES`) — el efecto es equivalente para este lab.
 
-### 8.1 Policy 1 — LANs-a-Internet (con bloqueos de apps/DNS/IPS)
+### 8.1 Policy 1 — LANs-a-Internet (con bloqueos de apps/DNS/IPS/HTTP)
 
 **Create New Policy:**
 - Name: `LANs-a-Internet`
@@ -263,13 +286,10 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 - Outgoing interface: tu interfaz WAN (alias tipo `ISP_INTERNET` / port1)
 - Source: `+` → `LAN_USUARIOS` y `LAN_SERVIDORES`
 - Destination: `+` → `all`
-- **Service: `HTTPS`, `DNS`** ⚠️ (ver nota abajo — NO uses `ALL` ni agregues `HTTP` aquí)
+- **Service: `HTTP`, `HTTPS`, `DNS`** ⚠️ (ver nota abajo)
 
-> **Por qué Service = HTTPS + DNS y no ALL:** el requisito real de la práctica es "solo permitir HTTP de usuarios hacia servidores, bloquear el resto" — y "el resto" incluye el HTTP plano hacia cualquier otro destino que no sea el servidor Web interno. Como la licencia eval limita a 3 políticas por VDOM (no se puede agregar una 4ta política de `DENY` explícito para HTTP hacia Internet), la forma de lograrlo dentro de esa restricción es **no incluir el servicio `HTTP` en esta política**. Así:
-> - Cualquier intento de `http://` hacia Internet no coincide con ninguna política ACCEPT → cae en el **implicit deny** → queda bloqueado
-> - `https://` y la resolución de nombres (`DNS`) siguen permitidos con normalidad → navegación segura funciona
-> - El único HTTP permitido en toda la topología es el de la Policy 2 (Usuarios → WEB_SERVER)
-> Si se agrega DNS después de crear la policy con otro Service y no aparece el sitio al navegar (aunque HTTPS esté permitido), **siempre revisa que `DNS` esté en la lista de Service** — sin resolución de nombres, ni HTTPS carga por dominio (solo por IP directa).
+> **Por qué Service incluye HTTP ahora:** el requisito real de la práctica es "solo permitir HTTP de usuarios hacia servidores, bloquear el resto". Antes esto se lograba quitando `HTTP` de esta policy y dejando que el implicit deny cortara la sesión — funciona, pero el navegador solo muestra un timeout, sin página de aviso. Para que el bloqueo se vea explícitamente con el logo de Fortinet (mejor evidencia para el reporte de lab), ahora se permite `HTTP` en el Service pero se bloquea todo con el perfil `WebFilter_BlockHTTP` (sección 7.5) aplicado dentro de esta misma policy. El resultado funcional es el mismo (HTTP hacia Internet queda bloqueado), solo cambia el mecanismo y la experiencia visual del bloqueo.
+> Recuerda que sin `DNS` en el Service, ni siquiera el `HTTPS` carga por nombre de dominio (solo por IP directa) — si al navegar no carga ningún sitio aunque HTTPS esté permitido, revisa primero que `DNS` siga en la lista de Service.
 
 **Firewall/Network Options:**
 - Inspection mode: cambia de `Flow-based` a **`Proxy-based`** (activa las opciones de Security Profiles)
@@ -277,11 +297,12 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 - IP pool configuration: `Use Outgoing Interface Address`
 
 **Security Profiles** (activa el toggle de cada uno y selecciona el perfil):
+- Web filter → `WebFilter_BlockHTTP`
 - DNS filter → `DNSFilter_ITLA`
 - Application control → `APPSBLOCKEOS`
 - IPS → `IPS_AntiScan`
-- AntiVirus, Web filter, Video filter, File filter, Web application firewall: apagados (no van en esta policy)
-- SSL inspection: dejar en `no-inspection` (el ⚠️ es solo informativo, ignóralo)
+- AntiVirus, Video filter, File filter, Web application firewall: apagados (no van en esta policy)
+- SSL inspection: dejar en `no-inspection` (necesario para que el HTTPS no se toque — ver sección 7.5)
 
 **Logging Options:**
 - Log allowed traffic: `Security events`
@@ -297,6 +318,7 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 - Schedule: always
 - **Service: `HTTP` únicamente** (quita `ALL`, agrega solo `HTTP`)
 - Action: ACCEPT
+- **Enable this policy: activado** ⚠️ (ver Errores comunes #12 — al final del formulario, es fácil dejarlo apagado sin querer y la policy entera queda inactiva aunque todo lo demás esté bien configurado)
 - OK
 
 > Con esto, cualquier otro tráfico de LAN_USUARIOS hacia LAN_SERVIDORES que no sea HTTP hacia WEB_SERVER queda bloqueado automáticamente por el **implicit deny** del FortiGate (no hace falta una política explícita de bloqueo — el motor deniega todo lo que no matchea ninguna regla ACCEPT).
@@ -320,33 +342,34 @@ Límite de licencia evaluación: **máximo 3 políticas por VDOM**. Los perfiles
 
 - **Dashboard → Network**: las 3 interfaces en estado "up".
 - **Monitor → DHCP Monitor**: confirma que Windows10 recibió IP por DHCP en el rango `10.13.67.2–126`.
-- **Policy & Objects → Firewall Policy**: las 3 reglas visibles, en orden 1→2→3, con los íconos de los perfiles de seguridad junto a cada una.
+- **Policy & Objects → Firewall Policy**: las 3 reglas visibles, en orden 1→2→3, todas con el toggle "Enable" en verde, con los íconos de los perfiles de seguridad junto a cada una.
 - Desde Windows10:
-  - `https://algún-sitio.com` → confirma salida a Internet (HTTPS permitido).
-  - `http://algún-sitio.com` (ej. `neverssl.com`) → **debe fallar** (HTTP hacia Internet queda bloqueado por implicit deny, ver 8.1).
-  - `ping 8.8.8.8` → **fallará** (ICMP no está en el Service de la Policy 1; esto es esperado, no es un error — usa `https://` para probar conectividad real, no ping).
+  - `https://algún-sitio.com` → confirma salida a Internet (HTTPS permitido, sin tocar por SSL no-inspection).
+  - `http://algún-sitio.com` (ej. `neverssl.com`) → **debe mostrar la página de bloqueo de Fortinet** (bloqueado por `WebFilter_BlockHTTP` en la Policy 1, ver 7.5 y 8.1).
+  - `ping 8.8.8.8` → **fallará** (ICMP no está en el Service de la Policy 1; esto es esperado, no es un error).
   - Navegar a un sitio de red social (ej. facebook.com por HTTPS) → debe bloquearse por Application Control.
   - Navegar a `itla.edu.do` → debe bloquearse por DNS Filter.
   - Intentar `ping` o cualquier protocolo distinto a HTTP hacia el servidor Web → debe bloquearse (solo HTTP permitido).
-  - Navegar a `http://10.13.67.130` → debe permitirse.
+  - Navegar a `http://10.13.67.130` → debe permitirse (Policy 2).
 - Desde el host Fedora: `curl http://200.13.67.2:8080` → confirma acceso GUI FortiGate (puerto cambiado, ver sección 6).
-- **Log & Report → Security Events**: confirma los bloqueos de Application Control, DNS Filter, IPS y WAF apareciendo en el log en tiempo real — esto es evidencia clave para tu reporte de lab.
+- **Log & Report → Security Events**: confirma los bloqueos de Web Filter, Application Control, DNS Filter, IPS y WAF apareciendo en el log en tiempo real — esto es evidencia clave para tu reporte de lab.
 
 ---
 
 ## 10. Errores comunes ya resueltos en este lab
 
 1. **"Can't change dynamic IP" (-651)** al asignar IP en port1 → el puerto viene en DHCP por defecto. Fix: cambiar `Addressing mode` a **Manual** antes de escribir la IP.
-2. **"Too many entries... vdom-max = 3"** al crear una 4ta política → licencia evaluación limita a 3 políticas por VDOM. Fix: consolidar y usar perfiles de seguridad dentro de las mismas 3 políticas en vez de políticas nuevas (ver también error #10, mismo límite obligó a resolver el bloqueo de HTTP por diseño de Service en vez de una 4ta policy DENY).
+2. **"Too many entries... vdom-max = 3"** al crear una 4ta política → licencia evaluación limita a 3 políticas por VDOM. Fix: consolidar y usar perfiles de seguridad dentro de las mismas 3 políticas en vez de políticas nuevas (esto incluye el bloqueo de HTTP hacia Internet, resuelto con un perfil Web Filter dentro de la Policy 1 en vez de una 4ta policy DENY — ver sección 7.5 y 8.1).
 3. **VIP no aparece como opción de Destination** en una política → el objeto VIP no se creó antes. Fix: crear siempre primero el objeto (Address/VIP) y después la política que lo referencia.
 4. **HTTPS de gestión no carga** aunque esté habilitado → normal en licencia evaluación FGVMEV. Fix: habilitar también HTTP y entrar por `http://200.13.67.2`.
 5. **"Invalid IP Netmask"** al asignar IP a una interfaz → se puso la dirección de red (`10.13.67.0/25`) en vez de la IP de host (`10.13.67.1/25`). Fix: usar siempre la IP específica del equipo en interfaces; la subred completa solo va en objetos de dirección.
-6. **WAF o Application Control no aparecen en el perfil de la política** → la política está en modo Flow-based. Fix: cambiar `Inspection Mode` a **Proxy-based** en la política antes de asignar el perfil.
+6. **WAF, Application Control o Web Filter no aparecen en el perfil de la política** → la política está en modo Flow-based. Fix: cambiar `Inspection Mode` a **Proxy-based** en la política antes de asignar el perfil.
 7. **No encuentro dónde agregar `itla.edu.do` en el DNS Filter** → el campo de dominios está oculto hasta activar el toggle `Domain Filter` dentro de la sección **Static Domain Filter** (no confundir con la tabla superior de `FortiGuard Category Based Filter`, que es solo para categorías generales de contenido). Fix: activa el toggle `Domain Filter`, luego usa el `+ Create New` que aparece debajo.
 8. **"No results" en el buscador de firmas IPS** (Security Profiles → Intrusion Prevention → Add Signatures) → el buscador requiere texto, dejarlo vacío no muestra nada. Además, la base de firmas de esta licencia eval está congelada desde 2015 (`diagnose autoupdate versions` → Attack Definitions 6.00741), así que nombres modernos como `Nmap.Scan` no existen. Fix: usar `FTP.Bounce.Port.Scan` (firma real de escaneo disponible en esta base) combinado con una entrada tipo `Filter` por `Severity: Medium/High/Critical` para cobertura general.
 9. **Incoming interface de una policy solo permite una interfaz** → en esta build no está disponible (o no se activó) `Multiple Interface Policies`. Fix: usar `any` como Incoming interface y dejar que `LAN_USUARIOS` + `LAN_SERVIDORES` en Source filtren el tráfico real.
 10. **Búsquedas en buscadores (ej. Bing) fallan a medias — la página principal carga pero al buscar algo se rompe** → en **Log & Report → Security Events**, la tarjeta `DNS Query` muestra decenas de eventos `FortiGuard rating error occurred` con Action `Redirect`. Esto pasa porque el FortiGate no logra consultar la categoría del dominio contra los servidores de FortiGuard (falla de conectividad hacia la nube de FortiGuard, típico en labs de GNS3/EVE-NG), y por defecto el DNS Filter **bloquea/redirige** cualquier dominio que no pueda calificar — justo lo que pasa con los decenas de subdominios nuevos que dispara una búsqueda (CDNs, APIs de autosugerencia, telemetría). No es un bloqueo de contenido real, es un fallo de calificación. Fix: en `Security Profiles → DNS Filter → DNSFilter_ITLA`, sección **Options**, activar **"Allow DNS requests when a rating error occurs"**. Esto no afecta el bloqueo de `itla.edu.do` porque esa es una entrada estática explícita (Static Domain Filter), no depende de la calificación en la nube de FortiGuard.
-11. **HTTP hacia Internet no muestra la página de bloqueo con el logo de FortiGuard, simplemente no conecta** → esto es normal y correcto cuando el bloqueo se logra por **ausencia del servicio `HTTP`** en la Policy 1 (implicit deny), en vez de por un Web Filter/DNS Filter. El implicit deny corta la sesión a nivel de firewall antes de que se establezca una conversación HTTP completa, por lo que no hay forma de "inyectar" una página de aviso — eso solo ocurre con bloqueos de Security Profile (como itla.edu.do o redes sociales), que sí dejan completar la conexión antes de interceptar el contenido. No requiere corrección, es el comportamiento esperado de este diseño.
+11. **HTTP hacia Internet no muestra la página de bloqueo con el logo de FortiGuard, simplemente no conecta** → esto pasaba en el diseño anterior, donde el bloqueo se lograba por **ausencia del servicio `HTTP`** en la Policy 1 (implicit deny). El implicit deny corta la sesión a nivel de firewall antes de que se establezca una conversación HTTP completa, por lo que no hay forma de "inyectar" una página de aviso. **Solución aplicada:** se permitió `HTTP` en el Service de la Policy 1 y se agregó el perfil `WebFilter_BlockHTTP` (sección 7.5), con una regla `URL: *` → `Block`. Así el proxy sí completa la conexión HTTP y logra interceptar el contenido con la página de bloqueo de Fortinet, mientras que el HTTPS sigue sin tocarse gracias a `SSL Inspection: no-inspection`.
+12. **Policy 2 (`Usuarios-a-Servidores-HTTP`) bien configurada pero `http://10.13.67.130` no carga desde Windows10** → el toggle **"Enable this policy"**, al final del formulario de la política, quedó apagado sin querer. Una policy deshabilitada no aplica aunque el resto de campos (Source, Destination, Service, Action) estén correctos. Fix: Edit Policy → bajar hasta el final → activar el toggle **Enable this policy** → OK.
 
 ```
 config firewall policy
