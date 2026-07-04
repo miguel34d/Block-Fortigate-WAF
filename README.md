@@ -22,6 +22,7 @@
 12. [Web Filter](#12-web-filter-bloquear-http-hacia-internet)
 13. [Políticas de Firewall](#13-políticas-de-firewall)
 14. [Verificación rápida](#14-verificación-rápida)
+15. [Sesión de verificación por control](#15-sesión-de-verificación-por-control)
 
 ---
 
@@ -374,6 +375,67 @@ Cambiar a **Block**:
 | Sesión NAT saliente | FortiGate CLI | `act=snat` traduce a `200.13.67.2` |
 
 **Logs:** `Log & Report → Security Events` — filtrar por `tcp_port_scan`, `itla`, `cloudflare` según la prueba.
+
+---
+
+## 15. Sesión de verificación por control
+
+Cada control se prueba de forma aislada: se ejecuta la acción, se observa el resultado en el cliente, y se confirma con el log correspondiente en el FortiGate.
+
+### 15.1 Detección y bloqueo de escáneres (IPv4 DoS Policy)
+
+| Paso | Comando / Acción | Dónde | Resultado esperado | Confirmación |
+|---|---|---|---|---|
+| 1 | `nmap -sS 10.13.67.130` | Kali (`10.13.67.11`) | El escaneo se cuelga o no reporta puertos abiertos tras el 5º intento | `Log & Report → Security Events` → filtrar `tcp_port_scan` → debe aparecer entrada con `srcip=10.13.67.11` |
+| 2 | `nmap -sS 200.13.67.2` | Kali | Escaneo muy lento o sin respuesta | Mismo log, `dstip=200.13.67.2` |
+| 3 | `nmap -sn 10.13.67.0/25` (ICMP sweep) | Kali | Se corta tras 5 pings | Log filtrado por `icmp_sweep` |
+| 4 (CLI, opcional) | `diagnose sys ddos-policy stats` | FortiGate | Contador `dropped` incrementa con cada intento | — |
+
+✅ **Funciona si:** aparece la entrada en Security Events con `action=block` y el `nmap` no logra completar el escaneo normalmente (timeout, sin resultados, o resultados parciales).
+
+> ⚠️ Si Kali y el objetivo están en el mismo switch/VLAN, recuerda que se requiere `switchport protected` en el switch (sección 10) para que el DoS Policy vea ese tráfico.
+
+---
+
+### 15.2 Bloqueo de redes sociales (Application Control)
+
+| Paso | Acción | Dónde | Resultado esperado | Confirmación |
+|---|---|---|---|---|
+| 1 | Navegar a `facebook.com` | Windows10 | Página no carga / redirige a bloqueo Fortinet | `Log & Report → Security Events` → filtrar por `Application Control` |
+| 2 | Navegar a `instagram.com` | Windows10 | Igual que arriba | Log con `app-cat=Social.Media` |
+| 3 | Navegar a `x.com` (Twitter) | Windows10 | Igual que arriba | Log con categoría bloqueada |
+
+✅ **Funciona si:** las páginas no cargan y el log muestra `action=blocked` con `category=Social Media` para cada dominio probado.
+
+---
+
+### 15.3 Bloqueo de llamadas por WhatsApp
+
+| Paso | Acción | Dónde | Resultado esperado | Confirmación |
+|---|---|---|---|---|
+| 1 | Abrir WhatsApp Web o app de escritorio | Windows10 | Mensajes de texto funcionan normal | — |
+| 2 | Intentar iniciar una **llamada de voz o video** | Windows10 | La llamada no conecta / falla al establecer | `Log & Report → Security Events` → filtrar por `WhatsApp_VoIP.Call` |
+
+✅ **Funciona si:** el chat de texto sigue funcionando (no se bloqueó toda la app) pero la llamada específicamente falla, y el log muestra la firma `WhatsApp_VoIP.Call` bloqueada.
+
+> 💡 Esta prueba distingue si de verdad solo se bloqueó la función de llamada (como pide el requisito) y no todo WhatsApp — si el chat también se cae, revisa que no hayas bloqueado la categoría completa `WhatsApp` en vez de solo `WhatsApp_VoIP.Call`.
+
+---
+
+### 15.4 Bloqueo de dominios y subdominios de itla.edu.do (incluyendo DoH)
+
+| Paso | Comando / Acción | Dónde | Resultado esperado | Confirmación |
+|---|---|---|---|---|
+| 1 | `nslookup itla.edu.do` | Windows10 (cmd) | Redirige a Block Portal / no resuelve a la IP real | `Log & Report → Security Events` → filtrar `itla` |
+| 2 | Navegar a `www.itla.edu.do` | Windows10 (navegador) | Página de bloqueo Fortinet | Mismo log |
+| 3 | Navegar a un subdominio, ej. `campus.itla.edu.do` | Windows10 | También bloqueado (cubre wildcard) | Log con `*.itla.edu.do` |
+| 4 | `nslookup itla.edu.do 8.8.8.8` (forzar DoH/DNS externo) | Windows10 | Debe seguir bloqueado si el DNS Filter también cubre `dns.google` | Log filtrado por `dns.google` o `cloudflare` |
+
+✅ **Funciona si:** tanto el dominio raíz como los subdominios muestran la página de bloqueo, y el intento de usar un DNS externo (`dns.google`, `cloudflare-dns.com`) también queda bloqueado — confirmando que no hay bypass por DoH.
+
+> 📝 Nota pendiente de esta conversación: en pruebas anteriores, `nslookup google.com` usando `dns.google` como servidor **sí resolvió sin bloqueo**, lo que sugiere que la entrada `dns.google` en el DNS Filter aún no está aplicando correctamente. Vale la pena repetir el paso 4 después de revisar esa regla.
+
+
 
 ---
 
