@@ -32,32 +32,41 @@ write memory
 3. FORTIGATE
 --------------------------------------------------------------
 
-config system global
-    set hostname "FortiGate"
-end
-
 config system interface
     edit "port1"
-        set alias "WAN-Router1"
+        set mode static
         set ip 200.13.67.2 255.255.255.252
-        set allowaccess ping https ssh fgfm
+        set allowaccess https http ping
         set role wan
     next
     edit "port2"
-        set alias "LAN-USUARIOS"
+        set mode static
         set ip 10.13.67.1 255.255.255.128
-        set allowaccess ping https ssh
+        set allowaccess https ping ssh
         set role lan
     next
     edit "port3"
-        set alias "LAN-SERVIDORES"
+        set mode static
         set ip 10.13.67.129 255.255.255.240
-        set allowaccess ping https ssh
+        set allowaccess https ping ssh
         set role lan
     next
 end
 
-! Ruta por defecto hacia Internet via Router1
+config system dhcp server
+    edit 1
+        set interface "port2"
+        config ip-range
+            edit 1
+                set start-ip 10.13.67.2
+                set end-ip 10.13.67.126
+            next
+        end
+        set default-gateway 10.13.67.1
+        set netmask 255.255.255.128
+    next
+end
+
 config router static
     edit 1
         set dst 0.0.0.0 0.0.0.0
@@ -66,7 +75,6 @@ config router static
     next
 end
 
-! Objetos de direcciones
 config firewall address
     edit "LAN_USUARIOS"
         set subnet 10.13.67.0 255.255.255.128
@@ -74,67 +82,228 @@ config firewall address
     edit "LAN_SERVIDORES"
         set subnet 10.13.67.128 255.255.255.240
     next
-end
-
-! Politicas de firewall
-config firewall policy
-    edit 1
-        set name "Usuarios-a-Internet"
-        set srcintf "port2"
-        set dstintf "port1"
-        set srcaddr "LAN_USUARIOS"
-        set dstaddr "all"
-        set action accept
-        set schedule "always"
-        set service "ALL"
-        set nat enable
-    next
-    edit 2
-        set name "Servidores-a-Internet"
-        set srcintf "port3"
-        set dstintf "port1"
-        set srcaddr "LAN_SERVIDORES"
-        set dstaddr "all"
-        set action accept
-        set schedule "always"
-        set service "ALL"
-        set nat enable
-    next
-    edit 3
-        set name "Usuarios-a-Servidores"
-        set srcintf "port2"
-        set dstintf "port3"
-        set srcaddr "LAN_USUARIOS"
-        set dstaddr "LAN_SERVIDORES"
-        set action accept
-        set schedule "always"
-        set service "ALL"
+    edit "WEB_SERVER"
+        set associated-interface "port3"
+        set subnet 10.13.67.130 255.255.255.255
     next
 end
-
---- (OPCIONAL) PUBLICAR EL SERVIDOR WEB HACIA INTERNET ---
-El Port1 del FortiGate ahora tiene la IP 200.13.67.2, que es
-"publica" solo dentro del segmento Router1-FortiGate. Como la
-IP realmente visible desde el ISP/Cloud1 es la de Router1
-(10.10.10.2), para publicar el servidor Web hacia Internet de
-verdad tambien hace falta un NAT/port-forward en Router1 que
-traduzca el trafico entrante hacia 200.13.67.2 (Port1 del
-FortiGate). El VIP de abajo resuelve la parte del FortiGate.
 
 config firewall vip
     edit "VIP_WEB"
         set extip 200.13.67.2
         set extintf "port1"
-        set mappedip "10.13.67.130"
         set portforward enable
-        set protocol tcp
+        set mappedip "10.13.67.130"
         set extport 80
         set mappedport 80
     next
 end
 
+config system global
+    set admin-port 8080
+end
+
+config application list
+    edit "APPSBLOCKEOS"
+        config entries
+            edit 1
+                set category 23
+                set action block
+            next
+            edit 2
+                set application 16364
+                set action block
+            next
+        end
+    next
+end
+
+config dnsfilter profile
+    edit "DNSFilter_ITLA"
+        set options error-allow
+        config domain-filter
+            edit 1
+                set domain "*.itla.edu.do"
+                set type wildcard
+                set action block
+            next
+            edit 2
+                set domain "itla.edu.do"
+                set type simple
+                set action block
+            next
+            edit 3
+                set domain "cloudflare-dns.com"
+                set type simple
+                set action block
+            next
+            edit 4
+                set domain "*.cloudflare-dns.com"
+                set type wildcard
+                set action block
+            next
+            edit 5
+                set domain "dns.google"
+                set type simple
+                set action block
+            next
+            edit 6
+                set domain "mozilla.cloudflare-dns.com"
+                set type simple
+                set action block
+            next
+        end
+    next
+end
+
+config system settings
+    set gui-dos-policy enable
+end
+
+config firewall DoS-policy
+    edit 1
+        set name "DoS_AntiScan"
+        set interface "port2"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        config anomaly
+            edit "tcp_port_scan"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+            edit "icmp_sweep"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+        end
+    next
+    edit 2
+        set name "DoS_AntiScan_WAN"
+        set interface "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        config anomaly
+            edit "tcp_port_scan"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+            edit "icmp_sweep"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+        end
+    next
+    edit 3
+        set name "DoS_AntiScan_SRV"
+        set interface "port3"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        config anomaly
+            edit "tcp_port_scan"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+            edit "icmp_sweep"
+                set status enable
+                set log enable
+                set action block
+                set threshold 5
+            next
+        end
+    next
+end
+
+enable
+configure terminal
+interface e0/2
+ switchport protected
+ exit
+interface e0/1
+ switchport protected
+ exit
+end
+write memory
+
+config system settings
+    set gui-waf-profile enable
+end
+
+config waf profile
+    edit "WAF_WebServer"
+        config signature
+            set cross-site-scripting block
+            set sql-injection block
+            set generic-attacks block
+            set trojans block
+        end
+    next
+end
+
+config webfilter profile
+    edit "WebFilter_BlockHTTP"
+        set feature-set proxy
+        config web
+            set urlfilter-table 1
+        end
+    next
+end
+
+config webfilter urlfilter
+    edit 1
+        set name "BlockAll"
+        config entries
+            edit 1
+                set url "*"
+                set type wildcard
+                set action block
+            next
+        end
+    next
+end
+
 config firewall policy
-    edit 4
+    edit 1
+        set name "LANs-a-Internet"
+        set srcintf "any"
+        set dstintf "port1"
+        set srcaddr "LAN_USUARIOS" "LAN_SERVIDORES"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "HTTP" "HTTPS" "DNS"
+        set utm-status enable
+        set inspection-mode proxy
+        set ssl-ssh-profile "no-inspection"
+        set webfilter-profile "WebFilter_BlockHTTP"
+        set dnsfilter-profile "DNSFilter_ITLA"
+        set application-list "APPSBLOCKEOS"
+        set nat enable
+    next
+    edit 2
+        set name "Usuarios-a-Servidores-HTTP"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "LAN_USUARIOS"
+        set dstaddr "WEB_SERVER"
+        set action accept
+        set schedule "always"
+        set service "HTTP"
+        set status enable
+    next
+    edit 3
         set name "Internet-a-Web"
         set srcintf "port1"
         set dstintf "port3"
@@ -143,6 +312,8 @@ config firewall policy
         set action accept
         set schedule "always"
         set service "HTTP"
+        set inspection-mode proxy
+        set webfilter-profile "WAF_WebServer"
     next
 end
 
