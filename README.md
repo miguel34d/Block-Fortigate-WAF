@@ -250,3 +250,8 @@ write memory
 | `curl` con SQLi/XSS a `200.13.67.2` | Fuera del FortiGate | Bloqueado (WAF) |
 
 **Logs:** `Log & Report → Security Events` — filtra por `tcp_port_scan`, `itla`, `cloudflare` según la prueba.
+
+
+<img width="773" height="894" alt="image" src="https://github.com/user-attachments/assets/c4d5bc10-7937-4c15-8e5d-9fd930650c30" />
+<img width="774" height="857" alt="image" src="https://github.com/user-attachments/assets/009e7f8c-2930-402f-b8f7-7ba08f4c423e" />
+
