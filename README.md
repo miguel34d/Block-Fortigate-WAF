@@ -1,11 +1,36 @@
 # Lab P11 — FortiGate (Guía rápida)
 
+## Requisitos de la topología
+
+- ✅ Toda configuración por GUI
+- ✅ Acceso a Internet
+- ✅ LAN de usuarios (/25)
+- ✅ LAN de servidores (/28)
+- ✅ IP en interfaces
+- ✅ DHCP en LAN de usuarios
+- ✅ Ruta por defecto
+- ✅ NAT
+- ✅ Solo tráfico HTTP de LAN usuarios → LAN servidores, bloquear el resto
+- ✅ Bloquear redes sociales
+- ✅ Bloquear llamadas por WhatsApp
+- ✅ Bloquear dominios y subdominios de itla.edu.do (incluyendo bypass por DNS-over-HTTPS)
+- ✅ Detectar y bloquear escáneres de red
+- ✅ Aplicar WAF al servidor Web
+
+---
+
 ## Direccionamiento
 | Segmento | Red | IP |
 |---|---|---|
 | Router1↔FortiGate | 200.13.67.0/30 | Port1: 200.13.67.2 |
 | LAN Usuarios | 10.13.67.0/25 | Port2: 10.13.67.1 |
 | LAN Servidores | 10.13.67.128/28 | Port3: 10.13.67.129 / Web: 10.13.67.130 |
+
+### Topología de red
+
+![Topología FortiGate](./topologia.png)
+
+*(coloca aquí tu imagen del diagrama, o reemplaza `./topologia.png` por la ruta/nombre real del archivo)*
 
 ---
 
