@@ -11,18 +11,19 @@
 1. [Requisitos de la topología](#1-requisitos-de-la-topología)
 2. [Direccionamiento](#2-direccionamiento)
 3. [Interfaces](#3-interfaces)
-4. [Ruta estática](#4-ruta-estática)
-5. [Addresses](#5-addresses)
-6. [VIP del servidor Web](#6-vip-del-servidor-web)
-7. [NAT (salida a Internet)](#7-nat-salida-a-internet)
-8. [Application Control](#8-application-control-redes-sociales--whatsapp)
-9. [DNS Filter](#9-dns-filter-itlaedudo--doh)
-10. [Detección de escáneres — IPv4 DoS Policy](#10-detección-de-escáneres--ipv4-dos-policy)
-11. [Web Application Firewall](#11-web-application-firewall)
-12. [Web Filter](#12-web-filter-bloquear-http-hacia-internet)
-13. [Políticas de Firewall](#13-políticas-de-firewall)
-14. [Verificación rápida](#14-verificación-rápida)
-15. [Sesión de verificación por control](#15-sesión-de-verificación-por-control)
+4. [DHCP en LAN de Usuarios](#4-dhcp-en-lan-de-usuarios)
+5. [Ruta estática](#5-ruta-estática)
+6. [Addresses](#6-addresses)
+7. [VIP del servidor Web](#7-vip-del-servidor-web)
+8. [NAT (salida a Internet)](#8-nat-salida-a-internet)
+9. [Application Control](#9-application-control-redes-sociales--whatsapp)
+10. [DNS Filter](#10-dns-filter-itlaedudo--doh)
+11. [Detección de escáneres — IPv4 DoS Policy](#11-detección-de-escáneres--ipv4-dos-policy)
+12. [Web Application Firewall](#12-web-application-firewall)
+13. [Web Filter](#13-web-filter-bloquear-http-hacia-internet)
+14. [Políticas de Firewall](#14-políticas-de-firewall)
+15. [Verificación rápida](#15-verificación-rápida)
+16. [Sesión de verificación por control](#16-sesión-de-verificación-por-control)
 
 ---
 
@@ -61,20 +62,34 @@
 
 📍 `Network → Interfaces → Edit`
 
-| Interfaz | Rol | Modo | IP / Máscara | Acceso administrativo |
-|---|---|---|---|---|
-| **Port1** | WAN | Manual | `200.13.67.2 / 255.255.255.252` | HTTPS, HTTP, PING |
-| **Port2** | LAN | Manual | `10.13.67.1 / 255.255.255.128` | HTTPS, PING, SSH |
-| **Port3** | LAN | Manual | `10.13.67.129 / 255.255.255.240` | HTTPS, PING, SSH |
-
-**DHCP en Port2:**
-- Estado: Enable
-- Rango: `10.13.67.2` – `10.13.67.126`
-- Gateway: `10.13.67.1`
+| Interfaz | Alias | Rol | Modo | IP / Máscara | Acceso administrativo |
+|---|---|---|---|---|---|
+| **Port1** | `ISP_INTERNET` | Undefined | Manual | `200.13.67.2 / 255.255.255.252` | HTTPS, HTTP, FMG-Access, PING |
+| **Port2** | `LAN_USUARIOS` | Undefined | Manual | `10.13.67.1 / 255.255.255.128` | HTTPS, SSH, PING |
+| **Port3** | — | LAN | Manual | `10.13.67.129 / 255.255.255.240` | HTTPS, PING, SSH |
 
 ---
 
-## 4. Ruta estática
+## 4. DHCP en LAN de Usuarios
+
+📍 `Network → Interfaces → Edit → LAN_USUARIOS (port2) → DHCP Server`
+
+| Campo | Valor |
+|---|---|
+| Estado | **Enable** |
+| Rango de direcciones (Address range) | `10.13.67.10` – `10.13.67.126` |
+| Netmask | `255.255.255.128` |
+| Default Gateway | Same as Interface IP (`10.13.67.1`) |
+| DNS Server | Specify → `8.8.8.8` |
+| Lease time | `604800` segundos (7 días) |
+
+> 💡 El DHCP se activa dentro de la misma pantalla de edición de la interfaz Port2, en la sección inferior "DHCP Server" — no es una pantalla separada en el menú.
+
+> 📝 El rango de direcciones inicia en `.10` (no en `.2`) para dejar las primeras IPs de la subred libres para asignaciones estáticas u otros hosts de gestión.
+
+---
+
+## 5. Ruta estática
 
 📍 `Network → Static Routes → Create New`
 
@@ -86,7 +101,7 @@
 
 ---
 
-## 5. Addresses
+## 6. Addresses
 
 📍 `Policy & Objects → Addresses → Create New`
 
@@ -98,7 +113,7 @@
 
 ---
 
-## 6. VIP del servidor Web
+## 7. VIP del servidor Web
 
 📍 `Policy & Objects → Virtual IPs → Create New`
 
@@ -120,11 +135,11 @@
 
 ---
 
-## 7. NAT (salida a Internet)
+## 8. NAT (salida a Internet)
 
 El NAT permite que el tráfico de `LAN_USUARIOS` y `LAN_SERVIDORES` salga a Internet traducido a la IP pública de `port1` (`200.13.67.2`).
 
-📍 Se configura directamente dentro de la **Policy 1 — LANs-a-Internet** (ver sección 13), en la pestaña de la política:
+📍 Se configura directamente dentro de la **Policy 1 — LANs-a-Internet** (ver sección 14), en la pestaña de la política:
 
 | Campo | Valor |
 |---|---|
@@ -152,7 +167,7 @@ hook=pre dir=reply act=dnat 8.8.8.8:53->200.13.67.2:49931(10.13.67.10:49931)
 
 ---
 
-## 8. Application Control (redes sociales + WhatsApp)
+## 9. Application Control (redes sociales + WhatsApp)
 
 📍 `Security Profiles → Application Control → Create New` → **`APPSBLOCKEOS`**
 
@@ -163,7 +178,7 @@ hook=pre dir=reply act=dnat 8.8.8.8:53->200.13.67.2:49931(10.13.67.10:49931)
 
 ---
 
-## 9. DNS Filter (itla.edu.do + DoH)
+## 10. DNS Filter (itla.edu.do + DoH)
 
 📍 `Security Profiles → DNS Filter → Create New` → **`DNSFilter_ITLA`**
 
@@ -183,7 +198,7 @@ Static Domain Filter → activar toggle → `+ Create New` para cada uno:
 
 ---
 
-## 10. Detección de escáneres — IPv4 DoS Policy
+## 11. Detección de escáneres — IPv4 DoS Policy
 
 📍 `System → Feature Visibility` → activar **IPv4 DoS Policy**
 
@@ -290,7 +305,7 @@ end
 
 ---
 
-## 11. Web Application Firewall
+## 12. Web Application Firewall
 
 📍 `System → Feature Visibility` → activar **Web Application Firewall**
 
@@ -304,7 +319,7 @@ Cambiar a **Block**:
 
 ---
 
-## 12. Web Filter (bloquear HTTP hacia Internet)
+## 13. Web Filter (bloquear HTTP hacia Internet)
 
 📍 `Security Profiles → Web Filter → Create New` → **`WebFilter_BlockHTTP`**
 
@@ -316,7 +331,7 @@ Cambiar a **Block**:
 
 ---
 
-## 13. Políticas de Firewall
+## 14. Políticas de Firewall
 
 📍 `Policy & Objects → Firewall Policy → Create New`
 
@@ -359,7 +374,7 @@ Cambiar a **Block**:
 
 ---
 
-## 14. Verificación rápida
+## 15. Verificación rápida
 
 | Prueba | Dónde | Resultado esperado |
 |---|---|---|
@@ -378,7 +393,7 @@ Cambiar a **Block**:
 
 ---
 
-## 15. Sesión de verificación por control
+## 16. Sesión de verificación por control
 
 Cada control se prueba de forma aislada: se ejecuta la acción, se observa el resultado en el cliente, y se confirma con el log correspondiente en el FortiGate.
 
@@ -393,7 +408,7 @@ Cada control se prueba de forma aislada: se ejecuta la acción, se observa el re
 
 ✅ **Funciona si:** aparece la entrada en Security Events con `action=block` y el `nmap` no logra completar el escaneo normalmente (timeout, sin resultados, o resultados parciales).
 
-> ⚠️ Si Kali y el objetivo están en el mismo switch/VLAN, recuerda que se requiere `switchport protected` en el switch (sección 10) para que el DoS Policy vea ese tráfico.
+> ⚠️ Si Kali y el objetivo están en el mismo switch/VLAN, recuerda que se requiere `switchport protected` en el switch (sección 11) para que el DoS Policy vea ese tráfico.
 
 ---
 
