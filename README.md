@@ -1,92 +1,172 @@
-# Lab P11 — FortiGate (Guía rápida)
+# Lab P11 — Configuración FortiGate
 
-## Requisitos de la topología
-
-- ✅ Toda configuración por GUI
-- ✅ Acceso a Internet
-- ✅ LAN de usuarios (/25)
-- ✅ LAN de servidores (/28)
-- ✅ IP en interfaces
-- ✅ DHCP en LAN de usuarios
-- ✅ Ruta por defecto
-- ✅ NAT
-- ✅ Solo tráfico HTTP de LAN usuarios → LAN servidores, bloquear el resto
-- ✅ Bloquear redes sociales
-- ✅ Bloquear llamadas por WhatsApp
-- ✅ Bloquear dominios y subdominios de itla.edu.do (incluyendo bypass por DNS-over-HTTPS)
-- ✅ Detectar y bloquear escáneres de red
-- ✅ Aplicar WAF al servidor Web
+**Curso:** Seguridad de Redes (TSI-203)
+**Estudiante:** Miguel Ramírez Meli — Matrícula 2025-1367
+**Institución:** Instituto Tecnológico de las Américas (ITLA)
 
 ---
 
-## Direccionamiento
+## Tabla de contenido
+
+1. [Requisitos de la topología](#1-requisitos-de-la-topología)
+2. [Direccionamiento](#2-direccionamiento)
+3. [Interfaces](#3-interfaces)
+4. [Ruta estática](#4-ruta-estática)
+5. [Addresses](#5-addresses)
+6. [VIP del servidor Web](#6-vip-del-servidor-web)
+7. [NAT (salida a Internet)](#7-nat-salida-a-internet)
+8. [Application Control](#8-application-control-redes-sociales--whatsapp)
+9. [DNS Filter](#9-dns-filter-itlaedudo--doh)
+10. [Detección de escáneres — IPv4 DoS Policy](#10-detección-de-escáneres--ipv4-dos-policy)
+11. [Web Application Firewall](#11-web-application-firewall)
+12. [Web Filter](#12-web-filter-bloquear-http-hacia-internet)
+13. [Políticas de Firewall](#13-políticas-de-firewall)
+14. [Verificación rápida](#14-verificación-rápida)
+
+---
+
+## 1. Requisitos de la topología
+
+| # | Requisito | Estado |
+|---|---|:---:|
+| 1 | Toda la configuración por GUI | ✅ |
+| 2 | Acceso a Internet | ✅ |
+| 3 | LAN de usuarios (/25) | ✅ |
+| 4 | LAN de servidores (/28) | ✅ |
+| 5 | IP en interfaces | ✅ |
+| 6 | DHCP en LAN de usuarios | ✅ |
+| 7 | Ruta por defecto | ✅ |
+| 8 | NAT | ✅ |
+| 9 | Solo tráfico HTTP de LAN usuarios → LAN servidores, bloquear el resto | ✅ |
+| 10 | Bloquear redes sociales | ✅ |
+| 11 | Bloquear llamadas por WhatsApp | ✅ |
+| 12 | Bloquear dominios y subdominios de `itla.edu.do` (incluyendo bypass por DoH) | ✅ |
+| 13 | Detectar y bloquear escáneres de red | ✅ |
+| 14 | Aplicar WAF al servidor Web | ✅ |
+
+---
+
+## 2. Direccionamiento
+
 | Segmento | Red | IP |
 |---|---|---|
-| Router1↔FortiGate | 200.13.67.0/30 | Port1: 200.13.67.2 |
-| LAN Usuarios | 10.13.67.0/25 | Port2: 10.13.67.1 |
-| LAN Servidores | 10.13.67.128/28 | Port3: 10.13.67.129 / Web: 10.13.67.130 |
-
-### Topología de red
-
-![Topología FortiGate](./topologia.png)
-
-*(coloca aquí tu imagen del diagrama, o reemplaza `./topologia.png` por la ruta/nombre real del archivo)*
+| Router1 ↔ FortiGate | `200.13.67.0/30` | Port1: `200.13.67.2` |
+| LAN Usuarios | `10.13.67.0/25` | Port2: `10.13.67.1` |
+| LAN Servidores | `10.13.67.128/28` | Port3: `10.13.67.129` · Web: `10.13.67.130` |
 
 ---
 
-## 1. Interfaces
-`Network → Interfaces → Edit`
+## 3. Interfaces
 
-**Port1:** Role WAN, Manual, IP `200.13.67.2/255.255.255.252`, Access: HTTPS/HTTP/PING
+📍 `Network → Interfaces → Edit`
 
-**Port2:** Role LAN, Manual, IP `10.13.67.1/255.255.255.128`, Access: HTTPS/PING/SSH
-- DHCP: Enable → Rango `10.13.67.2-126`, GW `10.13.67.1`
+| Interfaz | Rol | Modo | IP / Máscara | Acceso administrativo |
+|---|---|---|---|---|
+| **Port1** | WAN | Manual | `200.13.67.2 / 255.255.255.252` | HTTPS, HTTP, PING |
+| **Port2** | LAN | Manual | `10.13.67.1 / 255.255.255.128` | HTTPS, PING, SSH |
+| **Port3** | LAN | Manual | `10.13.67.129 / 255.255.255.240` | HTTPS, PING, SSH |
 
-**Port3:** Role LAN, Manual, IP `10.13.67.129/255.255.255.240`, Access: HTTPS/PING/SSH
+**DHCP en Port2:**
+- Estado: Enable
+- Rango: `10.13.67.2` – `10.13.67.126`
+- Gateway: `10.13.67.1`
 
 ---
 
-## 2. Ruta estática
-`Network → Static Routes → Create New`
-- Destination `0.0.0.0/0.0.0.0` · Gateway `200.13.67.1` · Interface `port1`
+## 4. Ruta estática
+
+📍 `Network → Static Routes → Create New`
+
+| Campo | Valor |
+|---|---|
+| Destination | `0.0.0.0/0.0.0.0` |
+| Gateway | `200.13.67.1` |
+| Interface | `port1` |
 
 ---
 
-## 3. Addresses
-`Policy & Objects → Addresses → Create New`
+## 5. Addresses
+
+📍 `Policy & Objects → Addresses → Create New`
 
 | Nombre | Subnet |
 |---|---|
-| LAN_USUARIOS | 10.13.67.0/25 |
-| LAN_SERVIDORES | 10.13.67.128/28 |
-| WEB_SERVER | 10.13.67.130/32 (interface: port3) |
+| `LAN_USUARIOS` | `10.13.67.0/25` |
+| `LAN_SERVIDORES` | `10.13.67.128/28` |
+| `WEB_SERVER` | `10.13.67.130/32` (interface: `port3`) |
 
 ---
 
-## 4. VIP del servidor Web
-`Policy & Objects → Virtual IPs → Create New`
-- Name `VIP_WEB` · Interface `port1` · External IP `200.13.67.2` · Mapped IP `10.13.67.130` · Port Forwarding Enable · TCP 80→80
+## 6. VIP del servidor Web
 
-⚠️ Después de esto, la GUI por HTTP se tapa. Cambia el puerto admin:
+📍 `Policy & Objects → Virtual IPs → Create New`
+
+| Campo | Valor |
+|---|---|
+| Name | `VIP_WEB` |
+| Interface | `port1` |
+| External IP | `200.13.67.2` |
+| Mapped IP | `10.13.67.130` |
+| Port Forwarding | Enable — TCP `80 → 80` |
+
+> ⚠️ **Aviso:** al activar el VIP en el puerto 80, la GUI por HTTP se tapa. Cambia el puerto de administración por CLI:
+> ```
+> config system global
+>     set admin-port 8080
+> end
+> ```
+> Entra por `http://200.13.67.2:8080`.
+
+---
+
+## 7. NAT (salida a Internet)
+
+El NAT permite que el tráfico de `LAN_USUARIOS` y `LAN_SERVIDORES` salga a Internet traducido a la IP pública de `port1` (`200.13.67.2`).
+
+📍 Se configura directamente dentro de la **Policy 1 — LANs-a-Internet** (ver sección 13), en la pestaña de la política:
+
+| Campo | Valor |
+|---|---|
+| NAT | **Enable** |
+| IP Pool Configuration | **Use Outgoing Interface Address** |
+
+> ✅ Toda la configuración del NAT se hace por GUI, dentro de la misma Policy 1 (no requiere CLI). Los comandos que siguen abajo son **solo para verificar** que el NAT esté traduciendo el tráfico correctamente.
+
+**Verificación del NAT en tiempo real (CLI)** — mientras se genera tráfico desde un cliente:
 ```
-config system global
-    set admin-port 8080
-end
+diagnose sys session filter clear
+diagnose sys session filter src 10.13.67.10
+diagnose sys session list
 ```
-Entra por `http://200.13.67.2:8080`
+
+Salida esperada — confirma la traducción de origen (`act=snat`) y destino en la respuesta (`act=dnat`):
+```
+hook=post dir=org act=snat 10.13.67.10:49931->8.8.8.8:53(200.13.67.2:49931)
+hook=pre dir=reply act=dnat 8.8.8.8:53->200.13.67.2:49931(10.13.67.10:49931)
+```
+
+✅ **Estado: verificado y funcionando.** El `policy_id=1` en las sesiones capturadas confirma que la traducción la aplica la Policy 1.
+
+> 💡 `diagnose sys session list` es solo lectura en memoria — no genera logs permanentes, se puede correr las veces que sea necesario sin impacto.
 
 ---
 
-## 5. Application Control (redes sociales + WhatsApp)
-`Security Profiles → Application Control → Create New` → `APPSBLOCKEOS`
-- Categories → `Social Media` → **Block**
-- Application and Filter Overrides → `+` → buscar `wha` → `WhatsApp_VoIP.Call` → **Block**
+## 8. Application Control (redes sociales + WhatsApp)
+
+📍 `Security Profiles → Application Control → Create New` → **`APPSBLOCKEOS`**
+
+| Sección | Acción |
+|---|---|
+| Categories → `Social Media` | **Block** |
+| Application and Filter Overrides → `+` → buscar `wha` → `WhatsApp_VoIP.Call` | **Block** |
 
 ---
 
-## 6. DNS Filter (itla.edu.do + DoH)
-`Security Profiles → DNS Filter → Create New` → `DNSFilter_ITLA`
-- Static Domain Filter → activar toggle → `+ Create New` para cada uno:
+## 9. DNS Filter (itla.edu.do + DoH)
+
+📍 `Security Profiles → DNS Filter → Create New` → **`DNSFilter_ITLA`**
+
+Static Domain Filter → activar toggle → `+ Create New` para cada uno:
 
 | Domain | Type | Action |
 |---|---|---|
@@ -97,21 +177,32 @@ Entra por `http://200.13.67.2:8080`
 | `dns.google` | Simple | Redirect to Block Portal |
 | `mozilla.cloudflare-dns.com` | Simple | Redirect to Block Portal |
 
-- Options → activar **"Allow DNS requests when a rating error occurs"** + **"Log all DNS queries"**
+**Options:**
+- ✅ Allow DNS requests when a rating error occurs
 
 ---
 
-## 7. Detectar escáneres — IPv4 DoS Policy
-`System → Feature Visibility` → activa **IPv4 DoS Policy**
+## 10. Detección de escáneres — IPv4 DoS Policy
 
-`Policy & Objects → IPv4 DoS Policy → Create New`
-- Source `all` · Destination `all` · Service `ALL`
-- En **L4 Anomalies**:
-  - `tcp_port_scan` → Logging ON, Action **Block**, Threshold `5`
-  - `icmp_sweep` → Logging ON, Action **Block**, Threshold `5`
-- Enable this policy: ON
+📍 `System → Feature Visibility` → activar **IPv4 DoS Policy**
 
-Repite para las 3 interfaces (o pega por CLI cambiando `interface`):
+📍 `Policy & Objects → IPv4 DoS Policy → Create New`
+
+| Campo | Valor |
+|---|---|
+| Source | `all` |
+| Destination | `all` |
+| Service | `ALL` |
+| Enable this policy | ON |
+
+**L4 Anomalies:**
+
+| Anomalía | Logging | Action | Threshold |
+|---|---|---|---|
+| `tcp_port_scan` | ON | Block | 5 |
+| `icmp_sweep` | ON | Block | 5 |
+
+Repetir para las 3 interfaces, o aplicar por CLI:
 
 ```
 config firewall DoS-policy
@@ -181,61 +272,93 @@ config firewall DoS-policy
 end
 ```
 
-**Caso especial — mismo switch/VLAN (Kali y Windows10):** el DoS Policy no lo ve. Fix en el switch:
-```
-enable
-configure terminal
-interface e0/2
- switchport protected
- exit
-interface e0/1
- switchport protected
- exit
-end
-write memory
-```
-(deja `e0/0`, el uplink, sin tocar)
+> ⚠️ **Caso especial — mismo switch/VLAN (Kali y Windows10):** el DoS Policy no detecta tráfico intra-VLAN. Solución en el switch:
+> ```
+> enable
+> configure terminal
+> interface e0/2
+>  switchport protected
+>  exit
+> interface e0/1
+>  switchport protected
+>  exit
+> end
+> write memory
+> ```
+> *(dejar `e0/0`, el uplink, sin tocar)*
 
 ---
 
-## 8. Web Application Firewall
-`System → Feature Visibility` → activa **Web Application Firewall**
+## 11. Web Application Firewall
 
-`Security Profiles → Web Application Firewall → Create New` → `WAF_WebServer`
-- Cambiar a **Block**: `Cross Site Scripting`, `SQL Injection`, `Generic Attacks`, `Trojans`
+📍 `System → Feature Visibility` → activar **Web Application Firewall**
+
+📍 `Security Profiles → Web Application Firewall → Create New` → **`WAF_WebServer`**
+
+Cambiar a **Block**:
+- Cross Site Scripting
+- SQL Injection
+- Generic Attacks
+- Trojans
 
 ---
 
-## 9. Web Filter (bloquear HTTP hacia Internet)
-`Security Profiles → Web Filter → Create New` → `WebFilter_BlockHTTP`
-- Feature set: Proxy-based
-- Static URL Filter → activar toggle → `+ Create New`: URL `*` · Type Wildcard · Action **Block**
+## 12. Web Filter (bloquear HTTP hacia Internet)
+
+📍 `Security Profiles → Web Filter → Create New` → **`WebFilter_BlockHTTP`**
+
+| Campo | Valor |
+|---|---|
+| Feature set | Proxy-based |
+| Static URL Filter | Activar toggle |
+| Entrada | URL `*` · Type Wildcard · Action **Block** |
 
 ---
 
-## 10. Políticas de Firewall (máx. 3)
-`Policy & Objects → Firewall Policy → Create New`
+## 13. Políticas de Firewall
+
+📍 `Policy & Objects → Firewall Policy → Create New`
 
 ### Policy 1 — LANs-a-Internet
-- Incoming `any` · Outgoing `port1` · Source `LAN_USUARIOS`+`LAN_SERVIDORES` · Dest `all`
-- Service: `HTTP`, `HTTPS`, `DNS`
-- Inspection mode: **Proxy-based** · NAT: Enable
-- Security Profiles: Web filter `WebFilter_BlockHTTP` · DNS filter `DNSFilter_ITLA` · App control `APPSBLOCKEOS`
-- SSL inspection: `no-inspection`
+
+| Campo | Valor |
+|---|---|
+| Incoming | `any` |
+| Outgoing | `port1` |
+| Source | `LAN_USUARIOS`, `LAN_SERVIDORES` |
+| Destination | `all` |
+| Service | `HTTP`, `HTTPS`, `DNS` |
+| Inspection mode | Proxy-based |
+| NAT | **Enable** (Use Outgoing Interface Address) |
+| Security Profiles | Web Filter `WebFilter_BlockHTTP` · DNS Filter `DNSFilter_ITLA` · App Control `APPSBLOCKEOS` |
+| SSL Inspection | `no-inspection` |
 
 ### Policy 2 — Usuarios-a-Servidores-HTTP
-- Incoming `port2` · Outgoing `port3` · Source `LAN_USUARIOS` · Dest `WEB_SERVER`
-- Service: **solo HTTP**
-- Enable this policy: **ON** (checar al final, se apaga fácil)
+
+| Campo | Valor |
+|---|---|
+| Incoming | `port2` |
+| Outgoing | `port3` |
+| Source | `LAN_USUARIOS` |
+| Destination | `WEB_SERVER` |
+| Service | **solo HTTP** |
+| Enable this policy | **ON** ⚠️ *(verificar al final, se desactiva fácil)* |
 
 ### Policy 3 — Internet-a-Web
-- Incoming `port1` · Outgoing `port3` · Source `all` · Dest `VIP_WEB`
-- Service: HTTP · Inspection: **Proxy-based**
-- Web Application Firewall: `WAF_WebServer`
+
+| Campo | Valor |
+|---|---|
+| Incoming | `port1` |
+| Outgoing | `port3` |
+| Source | `all` |
+| Destination | `VIP_WEB` |
+| Service | HTTP |
+| Inspection mode | Proxy-based |
+| Web Application Firewall | `WAF_WebServer` |
 
 ---
 
-## 11. Verificación rápida
+## 14. Verificación rápida
 
 | Prueba | Dónde | Resultado esperado |
 |---|---|---|
@@ -246,12 +369,16 @@ write memory
 | `http://10.13.67.130` | Windows10 | Carga (Policy 2) |
 | `nmap -sS 10.13.67.130` | Kali | Bloqueado |
 | `nmap -sS 200.13.67.2` | Kali | Muy lento / bloqueado |
-| `nmap -sS 10.13.67.10` | Kali | Bloqueado solo si aplicaste switchport protected |
+| `nmap -sS 10.13.67.10` | Kali | Bloqueado solo si se aplicó `switchport protected` |
 | `curl` con SQLi/XSS a `200.13.67.2` | Fuera del FortiGate | Bloqueado (WAF) |
+| Sesión NAT saliente | FortiGate CLI | `act=snat` traduce a `200.13.67.2` |
 
-**Logs:** `Log & Report → Security Events` — filtra por `tcp_port_scan`, `itla`, `cloudflare` según la prueba.
+**Logs:** `Log & Report → Security Events` — filtrar por `tcp_port_scan`, `itla`, `cloudflare` según la prueba.
 
+---
 
-- <img width="773" height="894" alt="image" src="https://github.com/user-attachments/assets/c4d5bc10-7937-4c15-8e5d-9fd930650c30" />
-- <img width="774" height="857" alt="image" src="https://github.com/user-attachments/assets/009e7f8c-2930-402f-b8f7-7ba08f4c423e" />
+## Evidencia
 
+![Evidencia 1](https://github.com/user-attachments/assets/c4d5bc10-7937-4c15-8e5d-9fd930650c30)
+
+![Evidencia 2](https://github.com/user-attachments/assets/009e7f8c-2930-402f-b8f7-7ba08f4c423e)
